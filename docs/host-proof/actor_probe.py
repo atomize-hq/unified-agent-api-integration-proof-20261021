@@ -17,11 +17,14 @@ report = {"scope": "ref-transports-only" if transport_only else "ref-transports-
           "workflow_source": os.environ["GITHUB_SHA"], "attempts": []}
 
 
-def api(method, path, data=None):
+def api(method, path, data=None, *, read_checks=False):
     assert path in ("user", "graphql") or path.startswith(f"repos/{REPO}/")
+    if read_checks:
+        assert method == "GET" and path.startswith(f"repos/{REPO}/commits/") and path.endswith("/check-runs?per_page=100")
+    request_token = os.environ["GH_TOKEN"] if read_checks else token
     request = urllib.request.Request("https://api.github.com/" + path, method=method,
         data=None if data is None else json.dumps(data).encode(),
-        headers={"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
+        headers={"Authorization": "Bearer " + request_token, "Accept": "application/vnd.github+json",
                  "X-GitHub-Api-Version": "2026-03-10", "Content-Type": "application/json"})
     try:
         response = urllib.request.urlopen(request, timeout=30)
@@ -77,7 +80,11 @@ try:
         head = pr["head"]["sha"]
         ancestry = get(prefix + f"/compare/{before}...{head}")
         assert ancestry["merge_base_commit"]["sha"] == before, "staging is not contained in PR head"
-        checks = get(prefix + f"/commits/{head}/check-runs?per_page=100")
+        # Fine-grained PAT setup does not expose Checks. Observe eligibility with
+        # the workflow token; every mutation and the endpoint control still use PAT.
+        status, checks = api("GET", prefix + f"/commits/{head}/check-runs?per_page=100", read_checks=True)
+        assert status == 200, "workflow check-reader permission unavailable"
+        report["check_reader"] = "workflow GITHUB_TOKEN; observation only"
         assert checks["total_count"] <= 100, "check pagination required"
         desired = json.loads(Path("docs/agents/lifecycle/staging-integration-ruleset.json").read_text())
         required = next(rule for rule in desired["rules"] if rule["type"] == "required_status_checks")["parameters"]["required_status_checks"]

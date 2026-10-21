@@ -29,6 +29,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      checks: read
     steps:
       - uses: actions/checkout@v5
       - name: Probe only the isolated repository
