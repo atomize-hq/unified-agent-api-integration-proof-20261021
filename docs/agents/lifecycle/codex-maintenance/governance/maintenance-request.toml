@@ -2086,3 +2086,6 @@ notes = [
   "If PR creation fails after packet generation, rerun packet regeneration from the frozen request and reopen the PR from the generated pr-summary path.",
   "If the local execution-host preflight (local Codex CLI host via execute-agent-maintenance) fails, fix the Codex binary/auth state and rerun `execute-agent-maintenance --dry-run` before write mode.",
 ]
+
+[support_depth]
+policy_identity = "acb909783b8ab13098de0de4005697fc3323ff8973c4b44663e856635bcfc7b3"

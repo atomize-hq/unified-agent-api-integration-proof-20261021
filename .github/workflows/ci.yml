@@ -547,6 +547,24 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+      - name: Isolated host-proof barrier
+        if: github.repository == 'atomize-hq/unified-agent-api-integration-proof-20261021' && github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f docs/host-proof/hold-group ]; then exit 0; fi
+          echo "Holding checked candidate $GITHUB_SHA for the isolated ancestor scenario"
+          for attempt in $(seq 1 300); do
+            if gh api --method GET "repos/$GITHUB_REPOSITORY/git/ref/heads/proof/release-$GITHUB_SHA" >/dev/null 2>&1; then
+              echo "Isolated barrier released for $GITHUB_SHA after poll $attempt"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Isolated proof barrier timed out" >&2
+          exit 1
       - name: Evaluate existing CI results
         shell: bash
         env:

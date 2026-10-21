@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "event": {
+    "lifecycle_path": "maintenance",
+    "request_commit": "9e4a06ad0a9494fcc8d3fbb10ef57f35b55c42aa",
+    "request_recorded_at": "2026-09-25T08:49:50Z",
+    "opened_from": ".github/workflows/agent-maintenance-open-pr.yml",
+    "trigger_kind": "upstream_release_detected"
+  },
+  "policy": {
+    "selection": {
+      "agent_id": "codex",
+      "enrollment": {
+        "lifecycle_path": "maintenance",
+        "version": "0.156.1",
+        "targets": [
+          "x86_64-unknown-linux-musl"
+        ],
+        "modes": [
+          {
+            "selector": "exec-json",
+            "command_path": "codex exec",
+            "mode": "headless",
+            "predicates": [
+              {
+                "flag": "--output-format",
+                "value": "json"
+              }
+            ]
+          }
+        ],
+        "operations": [
+          {
+            "id": "exec",
+            "serves": [
+              "exec-json"
+            ],
+            "templates": [
+              "CORE"
+            ],
+            "shared_mapping": "wrapper_only",
+            "forwarding": false,
+            "not_applicable_permitted": [],
+            "promise": {
+              "r1": "isolated host-proof fixture only",
+              "v1": "isolated host-proof fixture only",
+              "g1": "isolated host-proof fixture only",
+              "e1": "isolated host-proof fixture only",
+              "a1": "isolated host-proof fixture only",
+              "x1": "isolated host-proof fixture only",
+              "x2": "isolated host-proof fixture only",
+              "x3": "isolated host-proof fixture only",
+              "x4": "isolated host-proof fixture only"
+            }
+          }
+        ],
+        "capabilities": []
+      }
+    },
+    "rules_revision": "1",
+    "base": [
+      "A1",
+      "E1",
+      "G1",
+      "R1",
+      "V1",
+      "X1",
+      "X2",
+      "X3",
+      "X4"
+    ],
+    "templates": [
+      {
+        "template": "CORE",
+        "obligations": [
+          "LC2",
+          "OUT3"
+        ]
+      }
+    ],
+    "path_enabled": false,
+    "debt_baseline": [],
+    "identity": "acb909783b8ab13098de0de4005697fc3323ff8973c4b44663e856635bcfc7b3"
+  },
+  "obligations": null,
+  "execution": null,
+  "acceptance_entries": []
+}

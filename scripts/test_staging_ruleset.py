@@ -126,6 +126,31 @@ class RulesetTests(unittest.TestCase):
         self.detail["rules"][2]["parameters"]["dismiss_stale_reviews_on_push"] = 0
         self.assertEqual(self.compare()["status"], "different")  # false is not integer zero.
 
+    def test_host_returned_review_defaults_remain_exact_policy(self):
+        # Regression for isolated ruleset 25591182: compare every returned policy field,
+        # both in the ruleset detail and independently in effective branch rules.
+        original_detail = copy.deepcopy(self.detail)
+        original_effective = copy.deepcopy(self.effective)
+        changes = [
+            ("required_reviewers", [{"reviewer": {"id": 1, "type": "Team"},
+                                      "file_patterns": ["*"], "minimum_approvals": 1}]),
+            ("dismissal_restriction", {"enabled": True, "allowed_actors": []}),
+            ("require_extra_approval_for_unattributed_changes", False),
+        ]
+        for source in ("detail", "effective"):
+            for key, value in changes:
+                for variant in ("changed", "missing", "wrong_type"):
+                    self.detail = copy.deepcopy(original_detail)
+                    self.effective = copy.deepcopy(original_effective)
+                    rules = self.detail["rules"] if source == "detail" else self.effective
+                    parameters = rules[2]["parameters"]
+                    if variant == "missing":
+                        del parameters[key]
+                    else:
+                        parameters[key] = value if variant == "changed" else None
+                    with self.subTest(source=source, key=key, variant=variant):
+                        self.assertEqual(self.compare()["status"], "different")
+
     def test_effective_rules_must_independently_match_the_full_policy(self):
         original = copy.deepcopy(self.effective)
         for rules in [original[:-1], original + [original[0]],
@@ -248,7 +273,9 @@ class RulesetTests(unittest.TestCase):
         self.assertEqual(rules["pull_request"], {
             "allowed_merge_methods": ["merge"], "dismiss_stale_reviews_on_push": False,
             "require_code_owner_review": False, "require_last_push_approval": False,
-            "required_approving_review_count": 0, "required_review_thread_resolution": False})
+            "required_approving_review_count": 0, "required_review_thread_resolution": False,
+            "required_reviewers": [], "dismissal_restriction": {"enabled": False, "allowed_actors": []},
+            "require_extra_approval_for_unattributed_changes": True})
         self.assertFalse(rules["required_status_checks"]["do_not_enforce_on_create"])
         self.assertTrue(rules["required_status_checks"]["strict_required_status_checks_policy"])
         contexts = rules["required_status_checks"]["required_status_checks"]
