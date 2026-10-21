@@ -12,6 +12,15 @@ Only `refs/heads/staging` is targeted, with active enforcement when installed, n
 bypass actors, deletion/force-push protection, PR delivery and merge commits. Native required
 approval count remains zero; maintainer merge/enqueue authorization and agent reviews continue.
 
+The PR parameters explicitly retain GitHub's observed empty `required_reviewers`, disabled
+`dismissal_restriction` with no actors, and `require_extra_approval_for_unattributed_changes: true`.
+The latter field is inferred to correspond to GitHub's default additional approval for unattributed
+Copilot PRs; the REST reference does not currently describe the field. GitHub documents that the
+Copilot setting has no effect when required approvals are zero. This artifact keeps that zero count
+and adds no review requirement. Any later change to the count must revisit this setting together.
+These are policy parameters and are compared exactly, never discarded as server metadata.
+See [GitHub's approval-setting documentation](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets#additional-approval-for-unattributed-copilot-pull-requests).
+
 Required checks are `Staging integration gate`, `Preflight`, `Capability matrix (fresh + audit)`,
 and the three `Validate <agent> committed artifacts` contexts for Codex, Claude Code and OpenCode.
 Each is pinned to GitHub Actions App **15368**. This is an App ID, not an installation ID.
