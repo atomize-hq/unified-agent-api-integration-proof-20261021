@@ -11,6 +11,10 @@ on:
         type: string
         default: '1'
         required: true
+      control_pr:
+        description: Unprotected merge endpoint control PR
+        type: string
+        required: true
 permissions:
   contents: read
 jobs:
@@ -29,6 +33,7 @@ jobs:
           PROOF_PAT: ${{ inputs.credential == 'pat' && secrets.HOST_PROOF_PAT || '' }}
           PROOF_CREDENTIAL: ${{ inputs.credential }}
           PROOF_PR: ${{ inputs.pr_number }}
+          PROOF_CONTROL_PR: ${{ inputs.control_pr }}
         run: python3 docs/host-proof/actor_probe.py
       - uses: actions/upload-artifact@v4
         if: always()

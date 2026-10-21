@@ -15,7 +15,7 @@ report = {"repository": REPO, "credential": credential, "run_id": os.environ["GI
 
 
 def api(method, path, data=None):
-    assert path == "user" or path.startswith(f"repos/{REPO}/")
+    assert path in ("user", "graphql") or path.startswith(f"repos/{REPO}/")
     request = urllib.request.Request("https://api.github.com/" + path, method=method,
         data=None if data is None else json.dumps(data).encode(),
         headers={"Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
@@ -42,6 +42,8 @@ def refused(name, method, path, data, before):
     after = get(prefix + "/git/ref/heads/staging")["object"]["sha"]
     text = json.dumps(body).lower()
     policy_reason = any(word in text for word in ("repository rule", "protected branch", "merge queue"))
+    if name == "direct-merge-api":
+        policy_reason = "merge queue" in text
     proved = status in (403, 405, 409, 422) and after == before and policy_reason
     report["attempts"].append(dict(name=name, status=status, body=body, before=before,
                                    after=after, policy_refusal_observed=proved))
@@ -55,10 +57,54 @@ try:
         assert token and token.startswith(("ghp_", "github_pat_")), "PAT unavailable or wrong credential class"
         report["principal"] = get("user")["login"]
         report["token_class"] = "fine-grained PAT" if token.startswith("github_pat_") else "classic PAT"
+    elif credential == "human_oauth":
+        assert token and token.startswith("gho_"), "human OAuth token unavailable or wrong credential class"
+        report["principal"] = get("user")["login"]
+        report["token_class"] = "human OAuth user token"
     else:
         assert credential == "github_token" and token, "workflow token unavailable"
         report["token_class"] = "workflow GITHUB_TOKEN (contents and pull requests write)"
     before = get(prefix + "/git/ref/heads/staging")["object"]["sha"]
+    number = int(os.environ["PROOF_PR"])
+    pr = get(prefix + f"/pulls/{number}")
+    assert pr["state"] == "open" and not pr["draft"] and pr["mergeable"] is True
+    assert pr["base"]["repo"]["full_name"] == REPO and pr["base"]["ref"] == "staging"
+    assert pr["head"]["repo"]["full_name"] == REPO and pr["base"]["sha"] == before
+    head = pr["head"]["sha"]
+    checks = get(prefix + f"/commits/{head}/check-runs?per_page=100")
+    assert checks["total_count"] <= 100, "check pagination required"
+    desired = json.loads(Path("docs/agents/lifecycle/staging-integration-ruleset.json").read_text())
+    required = next(rule for rule in desired["rules"] if rule["type"] == "required_status_checks")["parameters"]["required_status_checks"]
+    observed = []
+    for required_check in required:
+        matches = [check for check in checks["check_runs"] if check["name"] == required_check["context"]
+                   and check["app"]["id"] == required_check["integration_id"]]
+        latest = max(matches, key=lambda check: check["id"])
+        assert latest["status"] == "completed" and latest["conclusion"] == "success"
+        observed.append({key: latest[key] for key in ("id", "name", "head_sha", "conclusion", "details_url")})
+    query = """query($number: Int!) { repository(owner: "atomize-hq", name: "unified-agent-api-integration-proof-20261021") {
+      pullRequest(number: $number) { headRefOid baseRefOid state mergeQueueEntry { id } }
+    } }"""
+    status, result = api("POST", "graphql", {"query": query, "variables": {"number": number}})
+    assert status == 200 and not result.get("errors"), "queue eligibility read unavailable"
+    eligibility = result["data"]["repository"]["pullRequest"]
+    assert eligibility == {"headRefOid": head, "baseRefOid": before, "state": "OPEN", "mergeQueueEntry": None}
+    report["direct_merge_pr"] = {"number": number, "head": head, "base": before,
+                                  "eligibility": eligibility, "required_checks": observed}
+    # The caller supplies an unprotected control PR, so a successful merge proves endpoint
+    # permission independently of the protected staging refusal. Never target staging here.
+    control_number = int(os.environ["PROOF_CONTROL_PR"])
+    control_pr = get(prefix + f"/pulls/{control_number}")
+    assert control_pr["state"] == "open" and control_pr["mergeable"] is True
+    assert control_pr["base"]["repo"]["full_name"] == REPO
+    assert control_pr["head"]["repo"]["full_name"] == REPO
+    assert control_pr["base"]["ref"].startswith("proof/control-target-")
+    status, result = api("PUT", prefix + f"/pulls/{control_number}/merge",
+                         {"sha": control_pr["head"]["sha"], "merge_method": "merge"})
+    report["merge_endpoint_control"] = {"number": control_number, "status": status, "body": result,
+                                        "base_ref": control_pr["base"]["ref"], "head": control_pr["head"]["sha"]}
+    assert status == 200 and result["merged"] is True, "unprotected merge endpoint control failed"
+    assert get(prefix + "/git/ref/heads/staging")["object"]["sha"] == before
     commit = get(prefix + "/git/commits/" + before)
     control = f"proof/control-{credential}-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
     status, blob = api("POST", prefix + "/git/blobs", {"content": control, "encoding": "utf-8"})
@@ -78,12 +124,8 @@ try:
                            {"sha": commit["parents"][0]["sha"], "force": True}, before))
     results.append(refused("delete", "DELETE", prefix + "/git/refs/heads/staging", None, before))
     report["recreation"] = "not reachable after refused deletion; existing-ref errors are not recreation proof"
-    number = int(os.environ.get("PROOF_PR", "0"))
-    if number:
-        pr = get(prefix + f"/pulls/{number}")
-        report["direct_merge_pr"] = {"number": number, "head": pr["head"]["sha"], "state": pr["state"]}
-        results.append(refused("direct-merge-api", "PUT", prefix + f"/pulls/{number}/merge",
-                               {"sha": pr["head"]["sha"], "merge_method": "merge"}, before))
+    results.append(refused("direct-merge-api", "PUT", prefix + f"/pulls/{number}/merge",
+                           {"sha": head, "merge_method": "merge"}, before))
     report["all_requested_policy_refusals_observed"] = all(results)
     assert all(results), "a refusal was missing or caused by something other than the tested policy"
 except Exception as error:
