@@ -511,6 +511,14 @@ Do not edit this section by hand.
 | `codex` | `0.91.0` | `x86_64-unknown-linux-musl` | `unsupported` | `unsupported` | `unsupported` | `none` | backend report includes intentionally unsupported surface outside unified support; backend report includes backend-only surface outside unified support |
 | `codex` | `0.61.0` | `x86_64-unknown-linux-musl` | `supported` | `partial` | `partial` | `none` | backend report includes intentionally unsupported surface outside unified support; backend report includes backend-only surface outside unified support |
 
+#### Depth facts: `codex` `0.156.1` `x86_64-unknown-linux-musl`
+
+Obligations frozen: no
+
+| promise | templates | qualified | outcomes | obligations |
+|---|---|---|---|---|
+| `exec` | `CORE` | no | insufficient_depth | — |
+
 ### `gemini_cli`
 
 | agent | version | target | manifest_support | backend_support | uaa_support | pointer_promotion | evidence_notes |
