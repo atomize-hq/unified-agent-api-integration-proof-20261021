@@ -558,7 +558,7 @@ jobs:
           echo "Holding checked candidate $GITHUB_SHA for the isolated ancestor scenario"
           for attempt in $(seq 1 300); do
             if gh api --method GET "repos/$GITHUB_REPOSITORY/git/ref/heads/proof/release-$GITHUB_SHA" >/dev/null 2>&1; then
-              echo "Isolated barrier released for $GITHUB_SHA"
+              echo "Isolated barrier released for $GITHUB_SHA after poll $attempt"
               exit 0
             fi
             sleep 5
