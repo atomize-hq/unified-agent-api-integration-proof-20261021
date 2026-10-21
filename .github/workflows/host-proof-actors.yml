@@ -1,0 +1,37 @@
+name: Isolated host-proof actor refusals
+on:
+  workflow_dispatch:
+    inputs:
+      credential:
+        type: choice
+        options: [github_token, pat]
+        default: github_token
+        required: true
+      pr_number:
+        type: string
+        default: '1'
+        required: true
+permissions:
+  contents: read
+jobs:
+  probe:
+    if: github.repository == 'atomize-hq/unified-agent-api-integration-proof-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Probe only the isolated repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_PAT: ${{ inputs.credential == 'pat' && secrets.HOST_PROOF_PAT || '' }}
+          PROOF_CREDENTIAL: ${{ inputs.credential }}
+          PROOF_PR: ${{ inputs.pr_number }}
+        run: python3 docs/host-proof/actor_probe.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-proof-actor-${{ inputs.credential }}-${{ github.run_id }}
+          path: target/host-proof-actor.json
