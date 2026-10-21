@@ -1,7 +1,9 @@
 """Negative host-policy tests, restricted to the disposable proof repository."""
+import base64
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -118,6 +120,43 @@ try:
     status, result = api("POST", prefix + "/git/refs", {"ref": "refs/heads/" + control, "sha": candidate["sha"]})
     report["unprotected_control"] = {"status": status, "ref": control, "commit": candidate["sha"]}
     assert status == 201, "credential cannot write even an unprotected control branch"
+    # Exercise Git receive-pack separately from the REST ref endpoints. Credentials
+    # travel only through private child environment configuration, never a URL/argv.
+    remote = f"https://github.com/{REPO}.git"
+    auth = "AUTHORIZATION: basic " + base64.b64encode(("x-access-token:" + token).encode()).decode()
+    git_env = {key: value for key, value in os.environ.items()
+               if not key.startswith("GIT_TRACE") and not key.startswith("GIT_CONFIG_")}
+    git_env.update(GIT_CONFIG_COUNT="3", GIT_CONFIG_KEY_0="http.https://github.com/.extraheader",
+                   GIT_CONFIG_VALUE_0="", GIT_CONFIG_KEY_1="http.https://github.com/.extraheader",
+                   GIT_CONFIG_VALUE_1=auth, GIT_CONFIG_KEY_2="credential.helper", GIT_CONFIG_VALUE_2="",
+                   GIT_TERMINAL_PROMPT="0", GIT_CURL_VERBOSE="0")
+    report["git_transport"] = []
+
+    def git_attempt(name, args, expect_success):
+        operation = subprocess.run(["git", *args], env=git_env, capture_output=True, text=True, timeout=90)
+        transcript = (operation.stdout + operation.stderr).replace(token, "[redacted]").replace(auth, "[redacted]")
+        after = get(prefix + "/git/ref/heads/staging")["object"]["sha"]
+        policy_reason = "repository rule" in transcript.lower() or "protected branch" in transcript.lower()
+        passed = (operation.returncode == 0 if expect_success else operation.returncode != 0 and policy_reason)
+        report["git_transport"].append({"name": name, "exit": operation.returncode, "transcript": transcript,
+                                         "before": before, "after": after, "expected_success": expect_success,
+                                         "expected_result_observed": passed and after == before})
+        assert after == before, "staging changed during Git transport probe"
+        assert passed, "Git transport did not return the expected result"
+
+    git_attempt("fetch-control-commit", ["fetch", "--no-tags", remote, "refs/heads/" + control], True)
+    git_control = "refs/heads/" + control + "-git"
+    git_attempt("unprotected-create", ["push", "--porcelain", remote, candidate["sha"] + ":" + git_control], True)
+    git_attempt("unprotected-force", ["push", "--porcelain", "--force-with-lease=" + git_control + ":" + candidate["sha"],
+                                      remote, before + ":" + git_control], True)
+    git_attempt("unprotected-delete", ["push", "--porcelain", "--force-with-lease=" + git_control + ":" + before,
+                                       remote, ":" + git_control], True)
+    git_attempt("unprotected-recreate", ["push", "--porcelain", remote, candidate["sha"] + ":" + git_control], True)
+    git_attempt("protected-direct-push", ["push", "--porcelain", remote, candidate["sha"] + ":refs/heads/staging"], False)
+    git_attempt("protected-force-push", ["push", "--porcelain", "--force-with-lease=refs/heads/staging:" + before,
+                                         remote, commit["parents"][0]["sha"] + ":refs/heads/staging"], False)
+    git_attempt("protected-delete", ["push", "--porcelain", "--force-with-lease=refs/heads/staging:" + before,
+                                     remote, ":refs/heads/staging"], False)
     results = [refused("direct-update", "PATCH", prefix + "/git/refs/heads/staging",
                        {"sha": candidate["sha"], "force": False}, before)]
     results.append(refused("force-update", "PATCH", prefix + "/git/refs/heads/staging",
