@@ -75,6 +75,8 @@ try:
         assert pr["base"]["repo"]["full_name"] == REPO and pr["base"]["ref"] == "staging"
         assert pr["head"]["repo"]["full_name"] == REPO and pr["base"]["sha"] == before
         head = pr["head"]["sha"]
+        ancestry = get(prefix + f"/compare/{before}...{head}")
+        assert ancestry["merge_base_commit"]["sha"] == before, "staging is not contained in PR head"
         checks = get(prefix + f"/commits/{head}/check-runs?per_page=100")
         assert checks["total_count"] <= 100, "check pagination required"
         desired = json.loads(Path("docs/agents/lifecycle/staging-integration-ruleset.json").read_text())
@@ -122,6 +124,19 @@ try:
     status, result = api("POST", prefix + "/git/refs", {"ref": "refs/heads/" + control, "sha": candidate["sha"]})
     report["unprotected_control"] = {"status": status, "ref": control, "commit": candidate["sha"]}
     assert status == 201, "credential cannot write even an unprotected control branch"
+    # A sibling with the exact current tree is a non-fast-forward target without
+    # changing CI files. This isolates ref policy from workflow-edit permissions.
+    status, force_candidate = api("POST", prefix + "/git/commits", {
+        "message": "test: same-tree non-fast-forward probe [skip ci]",
+        "tree": commit["tree"]["sha"], "parents": [commit["parents"][0]["sha"]]})
+    assert status == 201 and force_candidate["sha"] != before
+    assert force_candidate["tree"]["sha"] == commit["tree"]["sha"]
+    status, result = api("POST", prefix + "/git/refs", {
+        "ref": "refs/heads/" + control + "-force", "sha": force_candidate["sha"]})
+    assert status == 201
+    report["non_fast_forward_candidate"] = {
+        "sha": force_candidate["sha"], "tree": force_candidate["tree"]["sha"],
+        "parents": [parent["sha"] for parent in force_candidate["parents"]]}
     # Exercise Git receive-pack separately from the REST ref endpoints. Credentials
     # travel only through private child environment configuration, never a URL/argv.
     remote = f"https://github.com/{REPO}.git"
@@ -146,23 +161,23 @@ try:
         assert after == before, "staging changed during Git transport probe"
         assert passed, "Git transport did not return the expected result"
 
-    git_attempt("fetch-control-commit", ["fetch", "--no-tags", remote, "refs/heads/" + control], True)
+    git_attempt("fetch-control-commit", ["fetch", "--no-tags", remote, "refs/heads/" + control, "refs/heads/" + control + "-force"], True)
     git_control = "refs/heads/" + control + "-git"
     git_attempt("unprotected-create", ["push", "--porcelain", remote, candidate["sha"] + ":" + git_control], True)
     git_attempt("unprotected-force", ["push", "--porcelain", "--force-with-lease=" + git_control + ":" + candidate["sha"],
-                                      remote, before + ":" + git_control], True)
-    git_attempt("unprotected-delete", ["push", "--porcelain", "--force-with-lease=" + git_control + ":" + before,
+                                      remote, force_candidate["sha"] + ":" + git_control], True)
+    git_attempt("unprotected-delete", ["push", "--porcelain", "--force-with-lease=" + git_control + ":" + force_candidate["sha"],
                                        remote, ":" + git_control], True)
     git_attempt("unprotected-recreate", ["push", "--porcelain", remote, candidate["sha"] + ":" + git_control], True)
     git_attempt("protected-direct-push", ["push", "--porcelain", remote, candidate["sha"] + ":refs/heads/staging"], False)
     git_attempt("protected-force-push", ["push", "--porcelain", "--force-with-lease=refs/heads/staging:" + before,
-                                         remote, commit["parents"][0]["sha"] + ":refs/heads/staging"], False)
+                                         remote, force_candidate["sha"] + ":refs/heads/staging"], False)
     git_attempt("protected-delete", ["push", "--porcelain", "--force-with-lease=refs/heads/staging:" + before,
                                      remote, ":refs/heads/staging"], False)
     results = [refused("direct-update", "PATCH", prefix + "/git/refs/heads/staging",
                        {"sha": candidate["sha"], "force": False}, before)]
     results.append(refused("force-update", "PATCH", prefix + "/git/refs/heads/staging",
-                           {"sha": commit["parents"][0]["sha"], "force": True}, before))
+                           {"sha": force_candidate["sha"], "force": True}, before))
     results.append(refused("delete", "DELETE", prefix + "/git/refs/heads/staging", None, before))
     report["recreation"] = "not reachable after refused deletion; existing-ref errors are not recreation proof"
     if not transport_only:
