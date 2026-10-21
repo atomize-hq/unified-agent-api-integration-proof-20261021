@@ -73,7 +73,7 @@ try:
         pr = get(prefix + f"/pulls/{number}")
         assert pr["state"] == "open" and not pr["draft"] and pr["mergeable"] is True
         assert pr["base"]["repo"]["full_name"] == REPO and pr["base"]["ref"] == "staging"
-        assert pr["head"]["repo"]["full_name"] == REPO and pr["base"]["sha"] == before
+        assert pr["head"]["repo"]["full_name"] == REPO
         head = pr["head"]["sha"]
         ancestry = get(prefix + f"/compare/{before}...{head}")
         assert ancestry["merge_base_commit"]["sha"] == before, "staging is not contained in PR head"
@@ -94,8 +94,11 @@ try:
         status, result = api("POST", "graphql", {"query": query, "variables": {"number": number}})
         assert status == 200 and not result.get("errors"), "queue eligibility read unavailable"
         eligibility = result["data"]["repository"]["pullRequest"]
-        assert eligibility == {"headRefOid": head, "baseRefOid": before, "state": "OPEN", "mergeQueueEntry": None}
-        report["direct_merge_pr"] = {"number": number, "head": head, "base": before,
+        # PR base metadata can retain the older event base after the branch advances.
+        # Current staging is read separately above and must be an ancestor of head.
+        assert eligibility["headRefOid"] == head and eligibility["state"] == "OPEN"
+        assert eligibility["mergeQueueEntry"] is None
+        report["direct_merge_pr"] = {"number": number, "head": head, "base": before, "pr_base_metadata": pr["base"]["sha"],
                                       "eligibility": eligibility, "required_checks": observed}
         # The caller supplies an unprotected control PR, so a successful merge proves endpoint
         # permission independently of the protected staging refusal. Never target staging here.
