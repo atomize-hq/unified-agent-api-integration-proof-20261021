@@ -15,6 +15,10 @@ on:
         description: Unprotected merge endpoint control PR
         type: string
         required: true
+      transport_only:
+        description: Ref transport probes only, without a direct-merge claim
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -34,6 +38,7 @@ jobs:
           PROOF_CREDENTIAL: ${{ inputs.credential }}
           PROOF_PR: ${{ inputs.pr_number }}
           PROOF_CONTROL_PR: ${{ inputs.control_pr }}
+          PROOF_TRANSPORT_ONLY: ${{ inputs.transport_only }}
         run: python3 docs/host-proof/actor_probe.py
       - uses: actions/upload-artifact@v4
         if: always()
