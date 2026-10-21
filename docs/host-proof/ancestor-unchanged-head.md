@@ -1,0 +1,1 @@
+Isolated ancestor-transition proof. This head descends the actual held PR10 queue candidate, restores selected version0.156.1 without an acceptance entry, and will remain unchanged across the base advance.
